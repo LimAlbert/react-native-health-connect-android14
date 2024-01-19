@@ -5,7 +5,7 @@
  * @format
  */
 
-import React from 'react';
+import React, {useEffect} from 'react';
 import type {PropsWithChildren} from 'react';
 import {
   SafeAreaView,
@@ -13,9 +13,11 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   useColorScheme,
   View,
 } from 'react-native';
+import {initialize, requestPermission} from 'react-native-health-connect';
 
 import {
   Colors,
@@ -62,6 +64,13 @@ function App(): React.JSX.Element {
     backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
   };
 
+  useEffect(() => {
+    const init = async () => {
+      await initialize();
+    };
+    init();
+  }, []);
+
   return (
     <SafeAreaView style={backgroundStyle}>
       <StatusBar
@@ -76,6 +85,18 @@ function App(): React.JSX.Element {
           style={{
             backgroundColor: isDarkMode ? Colors.black : Colors.white,
           }}>
+          <TouchableOpacity
+            onPress={() => {
+              console.log('REQUEST PERMISSION');
+              requestPermission([
+                {accessType: 'read', recordType: 'Steps'},
+              ]).then(res => {
+                console.log('RES:');
+                console.log(res);
+              });
+            }}>
+            <Text>START PERMISSIONS</Text>
+          </TouchableOpacity>
           <Section title="Step One">
             Edit <Text style={styles.highlight}>App.tsx</Text> to change this
             screen and then come back to see your edits.
