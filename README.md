@@ -29,7 +29,20 @@ public  void  onRequestPermissionsResult(int  requestCode, String[] permissions,
 }
 ```
 
-react-native is preventing **registerForActivityResult** from calling its callback function by catching all the PermissionsResults in onRequestPermissionsResult without calling super
+react-native is preventing **registerForActivityResult** from calling its callback function by catching all the PermissionsResults in onRequestPermissionsResult without calling super.
+
+Since the source files have been edited, it is necessary to add these lines in your **settings.gradle** to make it use your local modified file
+```
+includeBuild('../node_modules/react-native') {
+    dependencySubstitution {
+        substitute(module("com.facebook.react:react-android")).using(project(":packages:react-native:ReactAndroid"))
+        substitute(module("com.facebook.react:react-native")).using(project(":packages:react-native:ReactAndroid"))
+        substitute(module("com.facebook.react:hermes-android")).using(project(":packages:react-native:ReactAndroid:hermes-engine"))
+        substitute(module("com.facebook.react:hermes-engine")).using(project(":packages:react-native:ReactAndroid:hermes-engine"))
+    }
+}
+```
+
 
 ### react-native-health-connect 
 
