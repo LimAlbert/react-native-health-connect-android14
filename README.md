@@ -1,80 +1,113 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
-# Getting Started
+# react-native-health-connect with Android 14
 
->**Note**: Make sure you have completed the [React Native - Environment Setup](https://reactnative.dev/docs/environment-setup) instructions till "Creating a new application" step, before proceeding.
+This project is an attempt of making react-native-health-connect work with Android 14. The code is for sure not the optimal way to implement this since I'm no native developper but at least it seems to work !
 
-## Step 1: Start the Metro Server
+There's 2 patches: 1 patch for react-native-health-connect and 1 patch for react-native, these patches are explained down below
 
-First, you will need to start **Metro**, the JavaScript _bundler_ that ships _with_ React Native.
+## Android Manifest
 
-To start Metro, run the following command from the _root_ of your React Native project:
+It is not specified in react-native-health-connect doc but this intent filter is mandatory to make health connect work with Android 14. I'm not sure how we can implement it properly using react-native but in this project, I've made an Activity showing a web view.
+This intent is called when the user press the privacy policy link in the permissions)
 
-```bash
-# using npm
-npm start
-
-# OR using Yarn
-yarn start
+```
+<intent-filter>
+	<action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />  
+	<category android:name="android.intent.category.HEALTH_PERMISSIONS" />  
+</intent-filter>  
 ```
 
-## Step 2: Start your Application
+## Patches breakdown
+### react-native
 
-Let Metro Bundler run in its _own_ terminal. Open a _new_ terminal from the _root_ of your React Native project. Run the following command to start your _Android_ or _iOS_ app:
-
-### For Android
-
-```bash
-# using npm
-npm run android
-
-# OR using Yarn
-yarn android
+- **react-native/ReactAndroid/src/main/java/com/facebook/react/ReactActivity.java**
+```diff
+@Override
+public  void  onRequestPermissionsResult(int  requestCode, String[] permissions, int[] grantResults) {
++	super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+	mDelegate.onRequestPermissionsResult(requestCode, permissions, grantResults);
+}
 ```
 
-### For iOS
+react-native is preventing **registerForActivityResult** from calling its callback function by catching all the PermissionsResults in onRequestPermissionsResult without calling super
 
-```bash
-# using npm
-npm run ios
+### react-native-health-connect 
 
-# OR using Yarn
-yarn ios
+- **HealthConnectContractLauncher.kt**
+```diff
++	package dev.matinzd.healthconnect  
++  
++	import androidx.activity.ComponentActivity  
++	import androidx.activity.result.ActivityResultLauncher  
++	import com.facebook.react.bridge.Promise  
++	import dev.matinzd.healthconnect.permissions.HCPermissionManager  
++  
++	object HealthConnectContractLauncher {  
++		private var contractLauncher: ActivityResultLauncher<Set<String>>? = null  
++		private var pendingPromise: Promise? = null  
++  
++		fun setProvider(activity: ComponentActivity, providerPackageName: String) {  
++			val contract = HCPermissionManager(providerPackageName).healthPermissionContract  
+  
++			contractLauncher = activity.registerForActivityResult(contract) { granted ->
++	  			pendingPromise?.resolve(HCPermissionManager.mapPermissionResult(granted))  
++			}  
++		}  
++  
++		fun launch(permissions: Set<String>, promise: Promise) {  
++			pendingPromise = promise  
++			contractLauncher?.launch(permissions)  
++		}  
++	}
+```
+- **MainActivity.kt**
+```diff
+	override fun onCreate(savedInstanceState: Bundle?) {  
+		super.onCreate(savedInstanceState)  
++		HealthConnectContractLauncher.setProvider(this, "com.google.android.apps.healthdata")  
+}
+```
+registerForActivityResult has to be called before the Activity is started
+
+- **HealthConnectManager.kt**
+```diff
+fun requestPermission(reactPermissions: ReadableArray, providerPackageName: String, promise: Promise) {  
+	throwUnlessClientIsAvailable(promise) {
++		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
++			HealthConnectContractLauncher.launch(HCPermissionManager.parsePermissions(reactPermissions), promise)  
+		} else {  
+			this.pendingPromise = promise  
+			this.latestPermissions = HCPermissionManager.parsePermissions(reactPermissions)  
+  
+			val bundle = Bundle().apply {  
+				putString("providerPackageName", providerPackageName)  
+			}  
+  
+			val intent = HCPermissionManager(providerPackageName).healthPermissionContract.createIntent(applicationContext, latestPermissions!!)  
+  
+			applicationContext.currentActivity?.startActivityForResult(intent, HealthConnectManager.REQUEST_CODE, bundle)
+		}  
+	}  
+}
 ```
 
-If everything is set up _correctly_, you should see your new app running in your _Android Emulator_ or _iOS Simulator_ shortly provided you have set up your emulator/simulator correctly.
+Checking SDK version, and if it is at least Android 14, launch the ResultContract
 
-This is one way to run your app — you can also run it directly from within Android Studio and Xcode respectively.
+- **permissions/HCPermissionManager.kt**
+```diff
+- private fun mapPermissionResult(grantedPermissions: Set<String>): WritableNativeArray {
++ fun mapPermissionResult(grantedPermissions: Set<String>): WritableNativeArray {  
+	return WritableNativeArray().apply {  
+		grantedPermissions.forEach {  
+			val map = WritableNativeMap()  
+			val (accessType, recordType) = extractPermissionResult(it)
 
-## Step 3: Modifying your App
+			map.putString("recordType", snakeToCamel(recordType))  
+			map.putString("accessType", accessType)  
+			pushMap(map)  
+		}  
+	}  
+}
+```
 
-Now that you have successfully run the app, let's modify it.
-
-1. Open `App.tsx` in your text editor of choice and edit some lines.
-2. For **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Developer Menu** (<kbd>Ctrl</kbd> + <kbd>M</kbd> (on Window and Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (on macOS)) to see your changes!
-
-   For **iOS**: Hit <kbd>Cmd ⌘</kbd> + <kbd>R</kbd> in your iOS Simulator to reload the app and see your changes!
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [Introduction to React Native](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you can't get this to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
-# react-native-health-connect-android14
+Removed the private keyword since mapPermissionResult is called from **HealthConnectContractLauncher**
